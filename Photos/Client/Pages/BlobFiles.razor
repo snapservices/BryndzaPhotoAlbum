@@ -1,0 +1,236 @@
+﻿@page "/blobfiles"
+@inject FilesManager FilesManager
+@inject IConfiguration Configuration
+
+<h3>Upload photo to Azure</h3>
+@if (ImageUrl != "")
+{
+    <img src="@ImageUrl" />
+    <br />
+    <br />
+}
+<div class="dropArea @dropClass">
+    Drag and drop photo, or click to select a local file.
+    <InputFile disabled="@Uploading"
+               OnChange="OnInputFileChange"
+               @ondragenter="HandleDragEnter"
+               @ondragleave="HandleDragLeave" />
+</div>
+<br />
+
+<h3>Upload large file in chunks to Azure</h3>
+
+<div class="dropArea @dropClass">
+    Drag and drop a very large file here, or click to select.
+    <InputFile disabled="@UploadingLargeFile"
+               OnChange="OnLargeFileInputFileChange"
+               @ondragenter="HandleDragEnter"
+               @ondragleave="HandleDragLeave" />
+</div>
+<div>@LargeUploadMessage</div>
+@if (UploadingLargeFile)
+{
+    <progress style="height:50px;width:100%;" value="@UploadedBytes" max="@TotalBytes"></progress>
+}
+<br />
+<h3>Blob Files</h3>
+<ul>
+    @foreach (var url in FileUrls)
+    {
+        <li><a href="@url">@url</a><br /></li>
+    }
+</ul>
+@code
+{
+
+    string ImageUrl = "";
+    bool Uploading = false;
+
+    bool UploadingLargeFile = false;
+    string LargeUploadMessage = "";
+    long UploadedBytes;
+    long TotalBytes;
+    List<string> FileUrls = new List<string>();
+    string ContainerName = "testfolder"; // this could go in config also
+
+    // support for drag/drop
+    string dropClass = string.Empty;
+    void HandleDragEnter()
+    {
+        dropClass = "dropAreaDrug";
+    }
+    void HandleDragLeave()
+    {
+        dropClass = string.Empty;
+    }
+
+    /// <summary>
+    /// Occurs when a large file is selected or dropped
+    /// </summary>
+    /// <param name="args"></param>
+    /// <returns></returns>
+    async Task OnLargeFileInputFileChange(InputFileChangeEventArgs args)
+    {
+        UploadedBytes = 0;
+
+        // Disable the file input field
+        UploadingLargeFile = true;
+        await InvokeAsync(StateHasChanged);
+
+        // calculate the chunks we have to send
+        TotalBytes = args.File.Size;
+        long percent = 0;
+        long chunkSize = 400000; // fairly arbitrary
+        long numChunks = TotalBytes / chunkSize;
+        long remainder = TotalBytes % chunkSize;
+
+        // get new filename with a bit of entropy
+        string justFileName = Path.GetFileNameWithoutExtension(args.File.Name);
+        var extension = Path.GetExtension(args.File.Name);
+        string newFileNameWithoutPath = $"{justFileName}-{DateTime.Now.Ticks.ToString()}{extension}";
+
+        bool firstChunk = true;
+
+        // Open the input and output file streams
+        using (var inStream = args.File.OpenReadStream(long.MaxValue))
+        {
+            for (int i = 0; i < numChunks; i++)
+            {
+                // Read the next chunk
+                var buffer = new byte[chunkSize];
+                await inStream.ReadAsync(buffer, 0, buffer.Length);
+
+                // create the FileChunk object
+                var chunk = new FileChunk
+                {
+                    Data = buffer,
+                    FileNameNoPath = newFileNameWithoutPath,
+                    Offset = UploadedBytes,
+                    FirstChunk = firstChunk
+                };
+
+                // upload this chunk
+                await FilesManager.UploadFileChunk(chunk);
+
+                firstChunk = false; // no longer the first chunk
+
+                // Update our progress data and UI
+                UploadedBytes += chunkSize;
+                percent = UploadedBytes * 100 / TotalBytes;
+                // Report progress with a string
+                LargeUploadMessage = $"Uploading {args.File.Name} {percent}%";
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (remainder > 0)
+            {
+                // Same stuff as above, just with the leftover chunk data
+                var buffer = new byte[remainder];
+                await inStream.ReadAsync(buffer, 0, buffer.Length);
+
+                // create the FileChunk object
+                var chunk = new FileChunk
+                {
+                    Data = buffer,
+                    FileNameNoPath = newFileNameWithoutPath,
+                    Offset = UploadedBytes,
+                    FirstChunk = firstChunk
+                };
+
+                // upload this chunk
+                await FilesManager.UploadFileChunk(chunk);
+
+                UploadedBytes += remainder;
+                percent = UploadedBytes * 100 / TotalBytes;
+                LargeUploadMessage = $"Uploading {args.File.Name} {percent}%";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        LargeUploadMessage = "Upload Complete. Sending to Azure...";
+        await InvokeAsync(StateHasChanged);
+
+        // Copy to Azure
+        string url = await FilesManager.CopyFileToContainer(ContainerName, newFileNameWithoutPath);
+        if (url != "")
+        {
+            LargeUploadMessage = "Upload Complete. Sending to Azure...Done";
+            // delete server file
+            await FilesManager.DeleteFileOnServer(newFileNameWithoutPath);
+        }
+        else
+        {
+            LargeUploadMessage = "Sorry. The file could not be sent to Azure.";
+        }
+
+        await ListFiles();
+
+        UploadingLargeFile = false;
+    }
+
+    async Task OnInputFileChange(InputFileChangeEventArgs args)
+    {
+        dropClass = string.Empty;
+
+        try
+        {
+            // disable the upload pane
+            Uploading = true;
+            await InvokeAsync(StateHasChanged);
+
+            // Resize to no more than 400x400
+            var format = "image/png";
+            var resizedImageFile = await args.File.RequestImageFileAsync(format, 400, 400);
+
+            // read resized png data into a buffer
+            var buffer = new byte[resizedImageFile.Size];
+            await resizedImageFile.OpenReadStream().ReadAsync(buffer);
+
+            // get new filename with a bit of entropy
+            string justFileName = Path.GetFileNameWithoutExtension(args.File.Name);
+            string newFileNameWithoutPath = $"{justFileName}-{DateTime.Now.Ticks.ToString()}thumb.png";
+
+            // upload png as one file chunk
+            var chunk = new FileChunk
+            {
+                Data = buffer,
+                FileNameNoPath = newFileNameWithoutPath,
+                Offset = 0,
+                FirstChunk = true
+            };
+
+            await FilesManager.UploadFileChunk(chunk);
+
+            // Copy to Azure
+            ImageUrl = await FilesManager.CopyFileToContainer(ContainerName, newFileNameWithoutPath);
+            if (ImageUrl != "")
+            {
+                // delete server file
+                await FilesManager.DeleteFileOnServer(newFileNameWithoutPath);
+                await ListFiles();
+            }
+
+            Uploading = false;
+
+        }
+        catch (Exception ex)
+        {
+            Uploading = false;
+            await InvokeAsync(StateHasChanged);
+            System.Diagnostics.Debug.WriteLine(ex.Message);
+            throw;
+        }
+    }
+
+    async Task ListFiles()
+    {
+        FileUrls = await FilesManager.GetBlobUrls(ContainerName);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ListFiles();
+    }
+
+}
