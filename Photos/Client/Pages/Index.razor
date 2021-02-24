@@ -17,12 +17,15 @@
 </div>
 <br />
 <h3>Files</h3>
-<ul>
+<div class="card" style="width: 18rem;">
     @foreach (var url in FileUrls)
     {
-        <li><a href="@url">@url</a><br /></li>
+        <a href="@url"><img src="@url" alt="@url" height="200" /></a>
+        <div class="card-body">
+            <p class="card-text">Add image caption!</p>
+        </div>
     }
-</ul>
+</div>
 @code
 {
 
@@ -53,7 +56,7 @@
 
             // Resize to no more than 400x400
             var format = "image/png";
-            var resizedImageFile = await args.File.RequestImageFileAsync(format, 400, 400);
+            var resizedImageFile = await args.File.RequestImageFileAsync(format, 200, 200);
 
             // read resized png data into a buffer
             var buffer = new byte[resizedImageFile.Size];

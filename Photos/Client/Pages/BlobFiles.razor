@@ -33,13 +33,22 @@
     <progress style="height:50px;width:100%;" value="@UploadedBytes" max="@TotalBytes"></progress>
 }
 <br />
-<h3>Blob Files</h3>
-<ul>
+<h3>Test Folder Blob Files</h3>
+<div class="row">
     @foreach (var url in FileUrls)
     {
-        <li><a href="@url">@url</a><br /></li>
+        <div class="col-md-6 col-lg-3">
+            <div class="card">
+                <img src="@url" class="card-img-top img-fluid" />
+                @*<img src="/img/img-placeholder.png" class="card-img-top img-fluid" />*@
+                <div class="card-body">
+                    <h4 class="card-title">testfolder</h4>
+                    <small>caption</small>
+                </div>
+            </div>
+        </div>
     }
-</ul>
+</div>
 @code
 {
 
