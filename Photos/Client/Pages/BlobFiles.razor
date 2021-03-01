@@ -33,18 +33,19 @@
     <progress style="height:50px;width:100%;" value="@UploadedBytes" max="@TotalBytes"></progress>
 }
 <br />
-<h5>Containers: photo/thumb</h5>
-<h3>Test Folder Blob Files</h3>
+<h5>Containers: photos</h5>
+<h3>Photos Folder Blob Files</h3>
 <div class="row">
     @foreach (var url in FileUrls)
     {
         <div class="col-md-6 col-lg-3">
             <div class="card">
-                <img src="@url" class="card-img-top img-fluid" />
+                <a href="@url" alt="Bryndza image"><img src="@url" class="card-img-top img-fluid" /></a>
+                @*<img src="@url" class="card-img-top img-fluid" />*@
                 @*<img src="/img/img-placeholder.png" class="card-img-top img-fluid" />*@
                 <div class="card-body">
-                    <h4 class="card-title">testfolder</h4>
-                    <small>caption</small>
+                    <h4 class="card-title">Photo</h4>
+                    <small>@url</small>
                 </div>
             </div>
         </div>
@@ -61,7 +62,7 @@
     long UploadedBytes;
     long TotalBytes;
     List<string> FileUrls = new List<string>();
-    string ContainerName = "photo"; // this could go in config also
+    string ContainerName = "photos"; // this could go in config also
 
     // support for drag/drop
     string dropClass = string.Empty;
